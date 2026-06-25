@@ -1,6 +1,6 @@
 # machin-learn 🧠
 
-**Master Machin (MFL)** — a knowledge base for agents learning the [Machine-First Language](https://github.com/javimosch/machin). Compiled from real-world usage building [machin-pomo](https://github.com/javimosch/machin-pomo), [machin-serve](https://github.com/javimosch/machin-serve), [machin-mcp](https://github.com/javimosch/machin-mcp), and studying the language spec.
+**Master Machin (MFL)** — a knowledge base for agents learning the [Machine-First Language](https://github.com/javimosch/machin). Compiled from real-world usage building [machin-pomo](https://github.com/javimosch/machin-pomo), [machin-serve](https://github.com/javimosch/machin-serve), [machin-mcp](https://github.com/javimosch/machin-mcp), [machin-revproxy](https://github.com/javimosch/machin-revproxy), and studying the language spec.
 
 ## Skills
 

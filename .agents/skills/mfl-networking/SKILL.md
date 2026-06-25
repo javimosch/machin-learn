@@ -259,7 +259,99 @@ func main() {
 }
 ```
 
-## 11. JSON-RPC / MCP server pattern (stdio transport)
+## 11. Reverse proxy pattern (TCP relay)
+
+A reverse proxy accepts HTTP requests from clients, forwards them to a backend server, and relays the response back. This demonstrates raw TCP `dial`/`read`/`write` relay between client ↔ proxy ↔ backend.
+
+### Core flow
+
+```mfl
+func handle(conn, backend_host, backend_port) {
+    // 1. Read client request
+    req := read(conn)
+
+    // 2. Parse request line
+    line_end := index(req, "\r\n")
+    request_line := substr(req, 0, line_end)
+    parts := split(request_line, " ")
+    method := parts[0]
+    path := parts[1]
+
+    // 3. Rewrite path (strip route prefix)
+    new_path := path
+    // ... prefix stripping logic ...
+
+    // 4. Rebuild request with rewritten headers
+    forward := method + " " + new_path + " HTTP/1.1\r\n"
+    // ... parse and forward headers, with Host rewriting ...
+    forward = forward + "Host: " + backend_host + "\r\n"
+    forward = forward + "X-Forwarded-For: 127.0.0.1\r\n"
+    forward = forward + "\r\n"
+
+    // 5. Connect to backend and forward
+    backend := dial(backend_host, backend_port)
+    write(backend, forward)
+
+    // 6. Read backend response (binary-safe) and relay to client
+    resp := read_bytes(backend)
+    write(conn, bytes_str(resp))
+
+    close(backend)
+    close(conn)
+}
+```
+
+### Key patterns
+
+| Step | MFL builtins |
+|------|-------------|
+| Accept connection | `listen`/`accept` |
+| Parse HTTP request | `read` + `split`/`index`/`substr` |
+| Route matching | `has_prefix(path, prefix)` — longest prefix match |
+| Connect to backend | `dial(host, port)` |
+| Forward request | `write(fd, request_string)` |
+| Read response | `read_bytes(fd)` — binary-safe, no NUL truncation |
+| Forward to client | `write(conn, bytes_str(resp))` |
+| Concurrency | `go handle(conn, ...)` |
+
+### ⚠️ Binary body limitation
+
+`read_bytes` returns `bytes` (NUL-safe), but `write()` takes a `string`. Converting with `bytes_str()` truncates at the first NUL byte. This means **binary content** (images, WASM, zip files) will be corrupted. Text content (HTML, JSON, JS, CSS, XML) works correctly.
+
+For binary-safe proxying, MFL would need a `write_bytes()` builtin.
+
+### Route matching with longest prefix
+
+```mfl
+type Route struct {
+    prefix string
+    host   string
+    port   int
+}
+
+func match_route(routes, path) (host, port, prefix) {
+    best := -1
+    i := 0
+    while i < len(routes) {
+        r := routes[i]
+        if has_prefix(path, r.prefix) && len(r.prefix) > best {
+            best = len(r.prefix)
+            host = r.host
+            port = r.port
+            prefix = r.prefix
+        }
+        i = i + 1
+    }
+}
+```
+
+### Real app reference
+
+| App | Features | Link |
+|-----|----------|------|
+| machin-revproxy | Full reverse proxy, path routing, header rewriting, 26 KB | [Source](https://github.com/javimosch/machin-revproxy) |
+
+## 12. JSON-RPC / MCP server pattern (stdio transport)
 
 The Model Context Protocol uses JSON-RPC 2.0 over stdio — one JSON message per line on stdin/stdout.
 
