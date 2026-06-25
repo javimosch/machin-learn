@@ -13,6 +13,7 @@
 | [`mfl-networking`](.agents/skills/mfl-networking/SKILL.md) | HTTP servers & clients, WebSocket, TLS, request parsing |
 | [`mfl-storage`](.agents/skills/mfl-storage/SKILL.md) | File I/O, SQLite, JSON, data persistence patterns |
 | [`mfl-ffi`](.agents/skills/mfl-ffi/SKILL.md) | C FFI: extern blocks, cstructs, raw memory, pointer/array ops |
+| [`mfl-mcp-client`](.agents/skills/mfl-mcp-client/SKILL.md) | Using machin-mcp as tool server from Claude Code, Claude Desktop, or directly via bash |
 
 ## Quick reference
 
