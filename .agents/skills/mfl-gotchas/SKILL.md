@@ -281,3 +281,51 @@ if b >= 48 && b <= 57 {     // '0'=48, '9'=57 — ASCII digit check
 ```
 
 This applies when you need to check character ranges like digits (`0-9`) or letters (`a-z`, `A-Z`).
+
+### 22. Memory ops: alloc/poke_u8/peek_i32 pattern for binary data
+
+To read a typed value from a binary file at a specific byte offset:
+
+1. Read the file with `read_file_bytes` (NUL-safe, unlike `read_file`)
+2. Allocate a buffer with `alloc(n)`
+3. Copy bytes into the buffer with a `poke_u8` loop
+4. Read typed values with `peek_i32(ptr, offset)` or `peek_f32(ptr, offset)`
+5. Free with `free(ptr)` when done
+
+```mfl
+data := read_file_bytes("firmware.bin")
+buf := alloc(len(data))
+i := 0
+while i < len(data) {
+    poke_u8(buf, i, byte_at(data, i))
+    i = i + 1
+}
+v := peek_i32(buf, 0x10)  // read int32 at offset 0x10
+f := peek_f32(buf, 0x14)  // read float32 at offset 0x14
+free(buf)
+```
+
+`peek_i32` returns a signed 64-bit int. For unsigned display, add 4294967296 if negative.
+`peek_f32` returns a float — use `print(v)` directly, `str(v)` won't compile (str takes int).
+`poke_u8` writes individual bytes; `poke_i32`/`poke_f32` write typed values at offsets.
+
+### 23. Binary patching via hex string manipulation
+
+MFL strings can't contain NUL bytes (both `read_file` and `bytes_str` truncate at NUL). For patching binary files:
+
+1. Read with `read_file_bytes` → bytes
+2. Convert to hex string with `to_hex` → hex string (no NULs, all [0-9a-f])
+3. Manipulate the hex string with `substr`/concat
+4. Convert back with `from_hex` → patched bytes
+5. Write to stdout with `write_bytes(1, result)` (user redirects to file)
+
+```mfl
+hex := to_hex(data)
+// Patch 4 bytes at offset 0x10 with deadbeef
+offset_chars := 0x10 * 2
+result_hex := substr(hex, 0, offset_chars) + "deadbeef" + substr(hex, offset_chars + 8, len(hex))
+result := from_hex(result_hex)
+write_bytes(1, result)
+```
+
+`write_file` also truncates at NUL. For binary-safe output, always use `write_bytes(1, ...)` and redirect the program.
