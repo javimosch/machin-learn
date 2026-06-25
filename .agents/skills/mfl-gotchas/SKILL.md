@@ -265,3 +265,19 @@ Prints every keyword, builtin with signature, idiom, and gotcha — version-exac
 ### 20. Channel sends deep-copy values
 
 Values sent over a channel are COPIED (strings fast, slices/maps/structs via JSON). Good for safety across goroutine boundaries, but be aware of the overhead for large data.
+
+### 21. String comparison with `>=`/`<=` has unexpected behavior
+
+Comparisons like `"1" >= "0"` return `false` even though `'1'` (ASCII 49) > `'0'` (ASCII 48). The `>=` and `<=` operators on string values may not follow ASCII byte order consistently.
+
+Use byte comparison instead for reliable ASCII ordering:
+
+```mfl
+c := charat(s, 0)
+b := byte_at(bytes(c), 0)  // get byte value
+if b >= 48 && b <= 57 {     // '0'=48, '9'=57 — ASCII digit check
+    // it's a digit
+}
+```
+
+This applies when you need to check character ranges like digits (`0-9`) or letters (`a-z`, `A-Z`).
