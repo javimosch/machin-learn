@@ -259,7 +259,72 @@ func main() {
 }
 ```
 
-## 11. Real app reference
+## 11. JSON-RPC / MCP server pattern (stdio transport)
+
+The Model Context Protocol uses JSON-RPC 2.0 over stdio — one JSON message per line on stdin/stdout.
+
+### Core loop
+
+```mfl
+func main() {
+    running := true
+    while running {
+        line := input()                 // read one line from stdin
+        if len(line) == 0 { break }    // EOF
+
+        method_raw, merr := json_get(line, ".method")
+        if len(merr) > 0 { continue }  // invalid JSON
+        method := strip_quotes(method_raw)
+
+        id_raw, ierr := json_get(line, ".id")
+        is_notification := len(ierr) > 0
+
+        if method == "initialize" && is_notification == false {
+            println(handle_initialize(id_raw))
+        } else if method == "tools/list" && is_notification == false {
+            println(handle_list_tools(id_raw))
+        } else if method == "tools/call" && is_notification == false {
+            println(handle_call_tool(line, id_raw))
+        } else if is_notification == false {
+            // MethodNotFound error
+            println("{\"jsonrpc\":\"2.0\",\"id\":" + id_raw + ",\"error\":{\"code\":-32601,\"message\":\"Method not found\"}}")
+        }
+        flush()
+    }
+}
+```
+
+### Key JSON-RPC patterns
+
+| Pattern | Code |
+|---------|------|
+| Extract method | `method_raw, _ := json_get(line, \".method\")` → `strip_quotes(method_raw)` |
+| Detect notification | `id_raw, ierr := json_get(line, \".id\")` → `len(ierr) > 0` |
+| Safe string encoding | `escaped := json(text)` — handles quotes, newlines, etc. |
+| JSON unescape | `replace(s, \"\\\\\", \"\\\\\")`, then `\"\\n\" → \"\\n\"` etc. |
+
+### ⚠️ `json_get` vs `parse` for escape handling
+
+`json_get` returns RAW JSON tokens **preserving escape sequences** — `\\n` stays as literal backslash-n. `parse()` (with struct types) interprets escapes correctly. Use a `json_unescape` helper when extracting string values with `json_get`:
+
+```mfl
+func json_unescape(s) (out) {
+    out = replace(s, "\\\\", "\\")
+    out = replace(out, "\\\"", "\"")
+    out = replace(out, "\\n", "\n")
+    out = replace(out, "\\r", "\r")
+    out = replace(out, "\\t", "\t")
+}
+```
+
+### Real app reference
+
+| App | Features | Link |
+|-----|----------|------|
+| machin-mcp | Full MCP server, JSON-RPC 2.0, 6 tools, stdio transport | [Source](https://github.com/javimosch/machin-mcp) |
+| machin-serve | Static file server, Basic auth, MIME types, directory index, traversal protection | [Source](https://github.com/javimosch/machin-serve) |
+| machin-fetch | HTTPS CLI client | [Source](https://github.com/javimosch/machin-fetch) |
+| machin-http | Multi-command HTTPS client with flags | [Source](https://github.com/javimosch/machin-http) |
 
 | App | Features | Link |
 |-----|----------|------|
