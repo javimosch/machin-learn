@@ -281,6 +281,85 @@ default:
 }
 ```
 
+### Worker pool pattern (bounded concurrency)
+
+Run N goroutines competing on a shared jobs channel, collecting results via `select`:
+
+```mfl
+func worker(host, jobs, results, done) {
+    for {
+        port, ok := <-jobs
+        if ok == false { break }    // jobs channel closed
+        if try_port(host, port) {
+            results <- port         // send result back
+        }
+    }
+    done <- true                     // signal completion
+}
+
+func main() {
+    jobs := make(chan int)
+    results := make(chan int)
+    done := make(chan bool)
+
+    // Start N workers
+    w := 0
+    while w < 100 {
+        go worker(host, jobs, results, done)
+        w = w + 1
+    }
+
+    // Dispatch jobs
+    j := 0
+    while j < 1000 {
+        jobs <- port_list[j]
+        j = j + 1
+    }
+    close(jobs)   // workers exit after draining
+
+    // Collect results via select
+    workers_done := 0
+    collecting := true
+    while collecting {
+        select {
+        case port := <-results:
+            println(str(port))       // process result
+        case <-done:
+            workers_done = workers_done + 1
+            if workers_done >= concurrency {
+                collecting = false   // all workers finished
+            }
+        }
+    }
+}
+```
+
+**Key points:**
+- Close `jobs` to signal workers that no more work is coming
+- Workers detect close via `port, ok := <-jobs` / `ok == false`
+- Use `done` channel per worker to track completion
+- `select` reads from either results or done channels
+- Bound concurrency by fixing the number of workers
+
+### Timeout via goroutine + channel
+
+```mfl
+func after(ms, ch) {
+    sleep(ms)
+    ch <- true
+}
+
+timeout_ch := make(chan bool)
+go after(5000, timeout_ch)
+
+select {
+case result := <-results:
+    // got a result in time
+case <-timeout_ch:
+    println("timed out")
+}
+```
+
 ### Arena GC
 
 Each goroutine has its own arena — memory is reclaimed when the goroutine returns.
