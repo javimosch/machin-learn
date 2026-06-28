@@ -225,6 +225,47 @@ if ok == false {
 }
 ```
 
+### 16. cstruct types cannot be MFL struct fields
+
+A `cstruct` declared in an `extern` block (`Model`, `Color`, `Sound`, `Shader`, …) can be a
+local variable, a function parameter, a return value, or stored in a slice (`[]Model`), but
+it **cannot** be a field of an MFL `type` struct:
+
+```mfl
+type Planet struct {
+    model Model      // COMPILE ERROR
+    orbit float
+}
+```
+
+**Why:** The C typedef for the cstruct (`mfl_Model`) isn't ready when the MFL type's C
+typedef (`mfl_Planet`) is generated.
+
+**Workaround:** parallel slices indexed together:
+
+```mfl
+type Body struct { orbit float  speed float  angle float }
+bodies := []Body{}
+models := []Model{}              // separate slice for opaque handles
+```
+
+### 17. Non-empty `[]struct` literals need `append`
+
+Scalar slices can be literal: `[]int{1, 2, 3}`. But struct slices cannot:
+
+```mfl
+// WRONG
+bodies := []Body{b1, b2, b3}
+
+// RIGHT — append each element
+bodies := []Body{}
+bodies = append(bodies, b1)
+bodies = append(bodies, b2)
+bodies = append(bodies, b3)
+```
+
+(Empty `[]Body{}` is fine.)
+
 ## 🔧 Build & toolchain
 
 ### 16. Workflow: .src → .mfl → binary

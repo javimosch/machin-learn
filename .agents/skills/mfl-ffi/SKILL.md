@@ -153,7 +153,51 @@ free(ptr)
 // Example: fn UploadMesh(Mesh*, bool)
 ```
 
-## 7. Complete raylib example pattern
+## 7. cstruct limitations: can't be MFL struct fields
+
+A `cstruct` declared in an `extern` block (`Model`, `Color`, `Sound`, `Texture2D`, `Shader`, …)
+**cannot** be used as a field in an MFL `type` struct:
+
+```mfl
+type Planet struct {
+    model Model      // COMPILE ERROR — C type not available at typedef site
+    orbit float
+}
+```
+
+The C typedef for the cstruct isn't generated until after the MFL type's C typedef,
+so `mfl_Model` doesn't exist yet when `mfl_Planet` is compiled.
+
+**Workaround:** use parallel slices indexed together:
+
+```mfl
+type Body struct { orbit float  speed float  angle float }
+bodies := []Body{}
+models := []Model{}              // separate slice for opaque handles
+```
+
+`cstruct` types CAN be local variables, function parameters, return values, and
+stored in **slices** (`[]Model`, `[]Color`). The limitation is only on MFL `type`
+struct fields.
+
+## 8. Non-empty []struct slice literals
+
+`[]S{a, b, c}` fails for struct types (works for scalars like `[]int{1,2,3}`):
+
+```mfl
+// WRONG — "non-empty []struct literals are not supported"
+bodies := []Body{b1, b2, b3}
+
+// RIGHT — build with append
+bodies := []Body{}
+bodies = append(bodies, b1)
+bodies = append(bodies, b2)
+bodies = append(bodies, b3)
+```
+
+(Empty `[]Body{}` is fine.)
+
+## 9. Complete raylib example pattern
 
 ```mfl
 extern "raylib" {
@@ -194,7 +238,7 @@ func main() {
 }
 ```
 
-## 8. real-world FFI apps in the ecosystem
+## 10. Real-world FFI apps in the ecosystem
 
 | App | What it demonstrates | Link |
 |-----|---------------------|------|
