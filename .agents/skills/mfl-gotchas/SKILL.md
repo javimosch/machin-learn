@@ -266,6 +266,38 @@ bodies = append(bodies, b3)
 
 (Empty `[]Body{}` is fine.)
 
+### 15b. ⚡ String concatenation in a loop is O(n²) — use `join()`
+
+```mfl
+// WRONG — O(n²): each `out = out + frag` copies the entire accumulated string
+out := "["
+for i := 0; i < n; i = i + 1 {
+    if i > 0 { out = out + "," }
+    out = out + json_str(items[i])   // copies all of `out` every iteration
+}
+out = out + "]"
+
+// RIGHT — O(n): build a []string, join once at the end
+parts := []string{}
+for i := 0; i < n; i = i + 1 {
+    parts = append(parts, json_str(items[i]))
+}
+out := "[" + join(parts, ",") + "]"
+```
+
+This is the **#1 performance trap** in MFL. Strings are immutable; `a + b`
+allocates a new string and copies both. In a loop of N iterations where each
+fragment is ~F bytes, the total copy work is O(N²·F). For N=3500, F=100 this
+is ~30 seconds; the `join()` version is **1 millisecond** (30000× faster).
+
+**Rule:** any loop that accumulates a string with `out = out + ...` must use
+the array+`join()` pattern instead. This applies to JSON rendering, CSV
+building, log formatting — anything that grows a string in a loop.
+
+Discovered building [sc-machin](https://github.com/javimosch/supercli/tree/master/supercli-machin-cli):
+`plugins explore --tags cli,utility` hung for 30+ seconds rendering 3496 JSON
+entries; switching all renderers to `join()` brought it to 0.47s end-to-end.
+
 ## 🔧 Build & toolchain
 
 ### 16. Workflow: .src → .mfl → binary
