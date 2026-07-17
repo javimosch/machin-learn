@@ -298,6 +298,49 @@ Discovered building [sc-machin](https://github.com/javimosch/supercli/tree/maste
 `plugins explore --tags cli,utility` hung for 30+ seconds rendering 3496 JSON
 entries; switching all renderers to `join()` brought it to 0.47s end-to-end.
 
+### 15c. 🚨 `parse()` with missing string fields → NULL → segfault on `len()`
+
+```mfl
+type Inner struct {
+    name string
+    description string   // often missing in the JSON
+}
+type Outer struct { items []Inner }
+
+raw := "{\"items\":[{\"name\":\"a\"},{\"name\":\"b\"}]}"
+o := parse(raw, Outer{})
+
+// WRONG — crashes with SIGSEGV: it.description is NULL (not ""), and
+// len(NULL) calls strlen(NULL)
+for i := 0; i < len(o.items); i = i + 1 {
+    write(2, "desc_len=" + str(len(o.items[i].description)) + "\n")  // 💥
+}
+
+// RIGHT (pre-fix machin) — guard with a nil/empty check via concatenation
+// (mfl_cat normalizes NULL to "" via mfl_s(), so "" + s is safe even if s is NULL)
+for i := 0; i < len(o.items); i = i + 1 {
+    desc := "" + o.items[i].description   // forces NULL → ""
+    write(2, "desc_len=" + str(len(desc)) + "\n")
+}
+```
+
+**Root cause:** `parse()` zero-initializes structs with `{0}`, so missing
+string fields become `NULL` (a `char*` null pointer), not `""`. The string
+`+` operator (`mfl_cat`) and comparisons (`mfl_strcmp`) already normalize
+NULL→`""` via `mfl_s()`, but `len()` called `strlen(s)` directly — and
+`strlen(NULL)` is undefined behavior (segfault on most platforms).
+
+**Fixed in machin** (codegen.go): `len()` on strings now routes through
+`mfl_s()`, so `len(NULL_string) == 0`. `mfl_charat` was also hardened to
+use `mfl_strlen_cached` (which has the same NULL guard). If you're on a
+machin build **before this fix**, use the `"" + s` workaround above for
+any string field that might be absent from the parsed JSON.
+
+Discovered building [sc-machin](https://github.com/javimosch/supercli/tree/master/supercli-machin-cli):
+`tools/list` over 852 MCP tools segfaulted at tool #766 (`beads.issue.create`)
+because its args had no `description` field in the lockfile JSON. The crash
+appeared in the MCP server's first live test — the dogfooding beat paid off.
+
 ## 🔧 Build & toolchain
 
 ### 16. Workflow: .src → .mfl → binary
