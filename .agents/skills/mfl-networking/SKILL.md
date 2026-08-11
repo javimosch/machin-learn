@@ -232,6 +232,79 @@ if ws > 0 {
 }
 ```
 
+## 9b. WebSocket server (framework/ws.src + hub broadcast)
+
+machweb's `ws(req, fn)` upgrades an HTTP request to a WebSocket. `fn` receives a `WSConn` and reads/writes frames via `ws_next_text`/`ws_send_text`. For a dashboard/chat server, use a **hub goroutine** that owns all state via channels — race-free, no mutexes:
+
+```mfl
+// Compose: machin encode framework/machweb.src framework/ws.src app.src > app.mfl
+
+type Hub struct {
+	register chan DashReg    // dashboard connects
+	clients  chan string      // client reports JSON
+	getState chan chan string  // synchronous state query (for REST fallback)
+}
+
+func hub_loop() {
+	dashboards := make(map[int]chan string)
+	clients := make(map[string]ClientEntry)
+	for {
+		select {
+			case r := <-hub.register:
+				dashboards[r.fd] = r.ch
+			case raw := <-hub.clients:
+				name, _ := json_get(raw, ".name")
+				clients[replace(name, "\"", "")] = ClientEntry{data: raw, ts: now_ms()}
+				state := build_state(clients)
+				for _, ch := range dashboards { ch <- state }  // broadcast
+			case reply := <-hub.getState:
+				reply <- build_state(clients)  // REST endpoint gets current state
+		}
+	}
+}
+
+func handle_request(req) {
+	if is_ws_request(req) == 1 {
+		return ws(req, func(c) {
+			myCh := make(chan string)
+			hub.register <- DashReg{fd: c.fd, ch: myCh}
+			// send current state immediately (not just on next update)
+			reply := make(chan string)
+			hub.getState <- reply
+			initial, _ := <-reply
+			ws_send_text(c.fd, initial)
+			for { msg, ok := <-myCh; if !ok { return }; ws_send_text(c.fd, msg) }
+		})
+	}
+	if req.path == "/api/report" && req.method == "POST" {
+		hub.clients <- req.body  // client POSTs metrics JSON
+		return ok_text("ok")
+	}
+	if req.path == "/api/clients" {
+		reply := make(chan string)
+		hub.getState <- reply
+		state, _ := <-reply
+		return ok_json(state)
+	}
+	return ok_html(dashboard_html())
+}
+
+func main() {
+	hub = Hub{register: make(chan DashReg), clients: make(chan string), getState: make(chan chan string)}
+	go hub_loop()
+	serve(9094, func(req) { return handle_request(req) })
+}
+```
+
+**Key patterns:**
+- `go hub_loop()` — `go` takes a named function call, not a closure (see mfl-gotchas #24)
+- `hub.getState <- reply; state, _ := <-reply` — synchronous request/reply over a channel (for REST endpoints that need current state without waiting for the next broadcast)
+- Send current state to a dashboard **immediately** on connect (via `getState`), not just on the next client update
+- Clients POST via `http_request()` (HTTP, not WebSocket) — simpler and works behind firewalls that block WS upgrades
+- `ws_next_text` transparently answers pings and stops on close/EOF — use it instead of raw `ws_recv`
+
+**Real app:** [machin-tinystats](https://github.com/javimosch/machin-tinystats) — 71 KB binary, full HTTP+WS dashboard, hub broadcast pattern.
+
 ## 10. Full server skeleton
 
 ```mfl
@@ -413,13 +486,8 @@ func json_unescape(s) (out) {
 
 | App | Features | Link |
 |-----|----------|------|
+| machin-tinystats | HTTP+WS server, hub broadcast, dashboard, 71 KB binary | [Source](https://github.com/javimosch/machin-tinystats) |
 | machin-mcp | Full MCP server, JSON-RPC 2.0, 6 tools, stdio transport | [Source](https://github.com/javimosch/machin-mcp) |
-| machin-serve | Static file server, Basic auth, MIME types, directory index, traversal protection | [Source](https://github.com/javimosch/machin-serve) |
-| machin-fetch | HTTPS CLI client | [Source](https://github.com/javimosch/machin-fetch) |
-| machin-http | Multi-command HTTPS client with flags | [Source](https://github.com/javimosch/machin-http) |
-
-| App | Features | Link |
-|-----|----------|------|
 | machin-serve | Static file server, Basic auth, MIME types, directory index, traversal protection | [Source](https://github.com/javimosch/machin-serve) |
 | machin-fetch | HTTPS CLI client | [Source](https://github.com/javimosch/machin-fetch) |
 | machin-http | Multi-command HTTPS client with flags | [Source](https://github.com/javimosch/machin-http) |

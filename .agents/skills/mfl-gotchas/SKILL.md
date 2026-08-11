@@ -445,3 +445,21 @@ write_bytes(1, result)
 ```
 
 `write_file` also truncates at NUL. For binary-safe output, always use `write_bytes(1, ...)` and redirect the program.
+
+### 24. Web/goroutine gotchas (from machin-tinystats)
+
+A cluster of compile errors from building a machweb + WebSocket server — all are "the syntax looks like Go but MFL is stricter":
+
+| Wrong | Right | Why |
+|---|---|---|
+| `var hub Hub` | `var hub = Hub{}` | package `var` needs `= <expr>` initializer |
+| `m := map[K]V{}` | `m := make(map[K]V)` | no composite map literals — always `make` |
+| `go func(){...}()` | `func loop(){...}` then `go loop()` | `go` takes a named function **call**, not a closure literal |
+| `int_str(42)` / `float_str(3.14)` | `str(42)` / `str(3.14)` | `str(int\|float\|bool\|string)` is the only formatter |
+| `index_of(s, "n")` | `contains(s,"n")` + `split(s,"n")` | no `index_of`/`strpos` — use `contains`+`split` |
+| `sleep_ms(5000)` | `sleep(5000)` | the pause builtin is `sleep(int)` in ms |
+| `serve(p, handler)` | `serve(p, func(req){return handler(req)})` | bare fn name isn't a first-class value — wrap in closure |
+| `not_found("msg")` | `not_found()` | takes 0 args (hardcoded "not found"); build `response(...)` for custom body |
+| `if ok == 0` (chan recv) | `if !ok` | comma-ok of `<-ch` / `m[k]` returns `(value, bool)` |
+
+The `go`-takes-a-call rule is the biggest surprise: if a goroutine needs captured state, pass it through a channel or a struct field the named function reads — there are no closure-literal goroutines.
