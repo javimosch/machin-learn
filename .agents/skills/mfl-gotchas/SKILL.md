@@ -463,3 +463,48 @@ A cluster of compile errors from building a machweb + WebSocket server — all a
 | `if ok == 0` (chan recv) | `if !ok` | comma-ok of `<-ch` / `m[k]` returns `(value, bool)` |
 
 The `go`-takes-a-call rule is the biggest surprise: if a goroutine needs captured state, pass it through a channel or a struct field the named function reads — there are no closure-literal goroutines.
+
+### 25. machweb handler globals dangle — serial accept loop for stateful servers
+
+`serve`/`serve_router` run every handler as `go machweb_handle(conn, ...)` — each
+request gets its own value-arena, freed at handler return. Any **computed**
+string or slice you store in a global from inside a handler points into freed
+arena pages: the NEXT request reads garbage or segfaults (intermittent,
+route-dependent — the worst kind).
+
+Two traps inside the trap:
+
+- **`copy()` does not relocate strings.** The docs say so plainly — strings are
+  immutable so they "come back as they are." `copy(s)` on an arena string is a
+  no-op for lifetime purposes. It only detaches slices/maps/struct headers.
+- **`append` to a global slice reallocates its backing in the handler's arena**
+  — even `copy()` of the elements doesn't save the backing array.
+
+What survives a request arena teardown: scalars, string/array **literals**
+created at init, `env()`/`args()` values, malloc-backed maps/channels, and disk.
+
+Workaround that keeps everything simple (used in mtlm-rpg/emberdeep): don't use
+`serve` at all — a serial accept loop on the main goroutine means the main
+arena never resets and globals behave normally:
+
+```mfl
+server := listen(port)
+for {
+    conn := accept(server)
+    req := parse_request_bytes(read_request_bytes(conn))
+    req.remote = peer_addr(conn)
+    res := dispatch(router, req)   // machweb's own helpers work fine here
+    write(conn, "HTTP/1.1 " + res.status + "\r\nContent-Type: " + res.ctype +
+          "\r\nContent-Length: " + str(len(res.body)) + "\r\nConnection: close\r\n\r\n" + res.body)
+    close(conn)
+}
+```
+
+Trade: no concurrency (right for a game/single-actor tool), and the main arena
+leaks a few KB per request — acceptable for sessions; for a real long-lived
+service, keep cross-request state in malloc-backed maps or on disk instead.
+
+Related self-inflicted segv: recursive alias lookups that can recurse on their
+own output (`item_named("rusty sword")` containing "sword" → calls itself
+forever → stack overflow → silent `Segmentation fault`). Alias expansions must
+be non-recursive, or guard `needle != fullname`.
