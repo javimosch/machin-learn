@@ -508,3 +508,15 @@ Related self-inflicted segv: recursive alias lookups that can recurse on their
 own output (`item_named("rusty sword")` containing "sword" → calls itself
 forever → stack overflow → silent `Segmentation fault`). Alias expansions must
 be non-recursive, or guard `needle != fullname`.
+
+## `http_request` has no socket timeout — a wedged read hangs the process forever
+
+Observed in tonada-edge: a daemon polling an HTTPS endpoint every ~10s ran fine
+for ~10 minutes, then one `http_request` stalled mid-TLS-read (`wchan=wait_woken`)
+and the process never recovered — no error, no timeout, silent death by pause.
+Two sibling daemons on the same host kept running, so it is a per-connection
+edge, not a systematic failure.
+
+Mitigations until the runtime grows a timeout: run pollers under a supervisor
+(systemd `Restart=always`, or a watchdog that kills and respawns on heartbeat
+staleness), or spawn the request on a goroutine and bound the wait yourself.
