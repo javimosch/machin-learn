@@ -262,7 +262,39 @@ CTD). ASan on a two-cycle repro (`--loop2`-style flag) catches it instantly. Sam
 for `alloc()` scratch that outlives a phase: free it on teardown even if exit leaks
 don't crash — a re-entry path turns "leak" into growth.
 
-## 11. Real-world FFI apps in the ecosystem
+## 11. raylib `DrawMeshInstanced`: the `MATRIX_MODEL` attribute-slot contract
+
+`DrawMeshInstanced` does NOT look up an attribute named `instanceTransform` at
+draw time. In raylib 5.0 (`rmodels.c`) it sends the instance `Matrix` array to
+vertex attribute slots `shader.locs[SHADER_LOC_MATRIX_MODEL] + 0..3` — the slot
+`LoadShader*` filled with the `matModel` *uniform* location. The shader must
+declare `in mat4 instanceTransform;` **and** the app must patch that locs slot
+to the attribute's location (this is what `lighting_instancing` does):
+
+```c
+// after LoadShaderFromMemory - patch in place via the shim
+static void bind_inst(Shader *s) {
+    s->locs[SHADER_LOC_MATRIX_MODEL] = rlGetLocationAttrib(s->id, "instanceTransform");
+}
+```
+
+Other contracts that differ from a normal `DrawMesh` call:
+
+- `mvp` carries **view×proj only** (model is forced to identity) — the shader
+  must compute `mvp * instanceTransform * pos`; `matModel`/`matNormal` uniforms
+  are never uploaded in an instanced draw, so don't read them.
+- If the locs slot isn't patched, instances draw with a zero/garbage matrix —
+  silently invisible, not an error.
+- The instanced attribute binding is **persistent VAO state**: a mesh must not
+  mix instanced and immediate `DrawMesh` calls in a run (divisor + enabled
+  attrib survive on `mesh.vaoId`).
+- Materials are per-mesh shared: if the same material serves both instanced and
+  immediate draws, swap `material.shader` for the instanced call and restore it.
+
+Same-frame numbers from the defil renderer (llvmpipe): 27524 `DrawMesh` calls →
+1078 instanced draws, 53 ms → 16 ms.
+
+## 12. Real-world FFI apps in the ecosystem
 
 | App | What it demonstrates | Link |
 |-----|---------------------|------|
