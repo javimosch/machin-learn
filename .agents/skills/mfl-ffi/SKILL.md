@@ -142,6 +142,8 @@ fval := peek_f32(ptr, 4)       // read float at offset 4
 free(ptr)
 ```
 
+**Peek/poke width coverage is asymmetric** (v0.140.0): peek has `i8`/`u8`/`i32`/`f32`; poke adds `u16`/`ptr`. There is **no `peek_i16`, `peek_u16`, `peek_i64`, `peek_f64`** — reading an `int16_t` array (e.g. a sim's height layer) needs either two `peek_u8` + shift/or, or a shim getter. Filed as machin issue #675 — check `machin guide` on newer builds before hand-rolling.
+
 **Pointer param patterns for C functions:**
 
 ```mfl
@@ -238,7 +240,29 @@ func main() {
 }
 ```
 
-## 10. Real-world FFI apps in the ecosystem
+## 10. Shim-owned resources: one owner, one releaser
+
+When a C shim manages a handle stored in an `alloc()` scratch block (GPU mesh/texture,
+audio stream), pick exactly one side that frees it:
+
+```mfl
+// WRONG — double-free, heap corruption on the SECOND use (Windows: 0xc0000374)
+UnloadMesh(wb + W_MESH())              // MFL frees, leaves stale vaoId/vboId in wb
+rl_rebuild_mesh(wb + W_MESH())         // shim sees vaoId != 0, UnloadMesh() AGAIN
+```
+
+```mfl
+// RIGHT — the shim owns it: it unloads the old handle internally on rebuild
+rl_rebuild_mesh(wb + W_MESH())
+```
+
+This is the nastiest crash shape: the first lifecycle "works", the corrupt heap only
+detonates at the next allocation — often a whole phase later (battle 1 fine, battle 2
+CTD). ASan on a two-cycle repro (`--loop2`-style flag) catches it instantly. Same rule
+for `alloc()` scratch that outlives a phase: free it on teardown even if exit leaks
+don't crash — a re-entry path turns "leak" into growth.
+
+## 11. Real-world FFI apps in the ecosystem
 
 | App | What it demonstrates | Link |
 |-----|---------------------|------|

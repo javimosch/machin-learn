@@ -520,3 +520,18 @@ edge, not a systematic failure.
 Mitigations until the runtime grows a timeout: run pollers under a supervisor
 (systemd `Restart=always`, or a watchdog that kills and respawns on heartbeat
 staleness), or spawn the request on a goroutine and bound the wait yourself.
+
+## `bool` and `num` are different types — no implicit conversion, ever
+
+Observed in defil/renderer/machin (raylib GUI). Two failure shapes, same root cause:
+
+1. **An extern that returns C `bool` can't be compared to `0`:** `if IsWindowFullscreen() == 0` fails typecheck with `bool vs num`. Write `if IsWindowFullscreen()` / `== false` (see also: no `!` operator — entry 5).
+
+2. **A parameter's type is inferred from its call sites — the first caller wins.** `hud_btn(x, y, w, h, label, lit, dis)` inferred `lit` as `num` because early call sites passed `paused` (a num); later passing `vfire == 2` (a bool) failed with `type mismatch for 'lit' in "hud_btn": num vs bool`. Pick ONE convention per parameter and convert at the call site:
+
+```mfl
+func b2n(b) (v) { if b { v = 1 } else { v = 0 } }
+hud_btn(x, y, w, h, "FIRE", b2n(vfire == 2), 0)
+```
+
+Consequences: design small helpers so flag params are always `num` (0/1) or always `bool` — mixing them across call sites is a compile-time failure, not a warning.
