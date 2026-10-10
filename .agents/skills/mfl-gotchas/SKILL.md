@@ -535,3 +535,16 @@ hud_btn(x, y, w, h, "FIRE", b2n(vfire == 2), 0)
 ```
 
 Consequences: design small helpers so flag params are always `num` (0/1) or always `bool` — mixing them across call sites is a compile-time failure, not a warning.
+
+## Request-scoped strings die with the request — never store them in globals
+
+Observed in machin-anvil (anvil-serve). A metrics registry stored label strings
+built inside a request handler (`"anvil_lane_requests_total{expert=\"" + expert + "\"}"`)
+in a global `[]string`. The next requests recycled the request arena, so the
+stored keys silently corrupted into other request bytes (`81.0\nAccept: */*…`),
+and the compose-at-read path segfaulted on a wild length.
+
+Fix pattern: store NUMBERS only in globals; keep a bounded index (lane/ep index)
+per request, and compose label strings at read time from startup-stable names
+(`env`-parsed lists, literals). Anything allocated inside an HTTP request
+handler must be treated as freed when the handler returns.
