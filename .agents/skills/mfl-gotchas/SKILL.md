@@ -570,14 +570,26 @@ Rename the inner binding (`ra`/`rb`/`rc`) or reuse `c = ...` only when the
 type matches. Same class of bug as gotcha #2 (named-return shadowing) but the
 general rule: one name = one type per function, first `:=` wins.
 
-## Some type errors carry no source location — isolate by stubbing
+## Type errors now name function + expression + file:line (fixed via #676)
 
-Observed in machin-game-demo-nanite. Inference failures inside a deeply-called
-function can surface as a bare `type mismatch: int vs struct` (or `returns N
-values but this return has M`) with **no file/line**. `machin encode` reports
-them at top level, so the failing function isn't named.
+Historically (pre-#676), inference failures inside a deeply-called function
+could surface as a bare `type mismatch: int vs struct` with **no file/line**,
+and `machin encode` wouldn't say which `.src` file a function came from —
+forcing stub-and-re-encode bisection.
 
-Cheap isolation: comment out the body of suspect functions one at a time (or
-replace with `return` of a trivial value) and re-encode — the error disappears
-when the culprit is stubbed. Multi-file `.src` concatenation means the error
-also won't tell you WHICH source file the function came from.
+Fixed: constraints carry their enclosing function, so errors now read
+
+```
+type mismatch in "nt_simplify_group": num vs string — from c + k — at build.src:42
+```
+
+- `in "fn"` — the function that generated the constraint (anonymous slots
+  like builtin args/returns have no variable name, so the fn is the anchor)
+- `— from <expr>` — the expression that produced the conflicting type
+- `— at file:line` — decl-level position, correct per-file in multi-file
+  `encode`/`check` compositions; absent for packed `.mfl` input
+
+`machin check --json` reports the same info in structured `decl`/`line`
+fields. If you still see a bare mismatch, it's from a global initializer
+(`var x = ...` runs outside any function) — the `— from` clause still
+points at the expression.
