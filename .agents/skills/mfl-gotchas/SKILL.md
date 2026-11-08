@@ -548,3 +548,36 @@ Fix pattern: store NUMBERS only in globals; keep a bounded index (lane/ep index)
 per request, and compose label strings at read time from startup-stable names
 (`env`-parsed lists, literals). Anything allocated inside an HTTP request
 handler must be treated as freed when the handler returns.
+
+## `:=` is function-scoped — a same-name/different-type redeclaration is a type error, not shadowing
+
+Observed in machin-game-demo-nanite. `:=` binds for the WHOLE function body,
+not the enclosing block. Reusing a name in a nested scope with a different
+type fails typecheck even though it "looks" block-local:
+
+```mfl
+func f() {
+    c := g_cl[i]          // c : Cluster
+    ...
+    while ... {
+        c := gt[t]        // WRONG — c was already bound as Cluster fn-wide
+        ...
+    }
+}
+```
+
+Rename the inner binding (`ra`/`rb`/`rc`) or reuse `c = ...` only when the
+type matches. Same class of bug as gotcha #2 (named-return shadowing) but the
+general rule: one name = one type per function, first `:=` wins.
+
+## Some type errors carry no source location — isolate by stubbing
+
+Observed in machin-game-demo-nanite. Inference failures inside a deeply-called
+function can surface as a bare `type mismatch: int vs struct` (or `returns N
+values but this return has M`) with **no file/line**. `machin encode` reports
+them at top level, so the failing function isn't named.
+
+Cheap isolation: comment out the body of suspect functions one at a time (or
+replace with `return` of a trivial value) and re-encode — the error disappears
+when the culprit is stubbed. Multi-file `.src` concatenation means the error
+also won't tell you WHICH source file the function came from.

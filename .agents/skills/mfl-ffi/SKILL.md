@@ -303,3 +303,32 @@ Same-frame numbers from the defil renderer (llvmpipe): 27524 `DrawMesh` calls �
 | machin-game-demo-3d | Nested cstruct (Camera3D), 3D rendering | [Source](https://github.com/javimosch/machin-game-demo-3d) |
 | machin-game-demo-planet | Raw memory (alloc/poke), GPU mesh | [Source](https://github.com/javimosch/machin-game-demo-planet) |
 | machin-game-demo-cyberpunk | Instancing, shaders, procedural worlds | [Source](https://github.com/javimosch/machin-game-demo-cyberpunk) |
+
+## 13. Software framebuffer → GPU texture (`alloc` + `poke` + `UpdateTexture`)
+
+Observed in machin-game-demo-nanite (CPU rasterizer presented through raylib).
+Pattern for blitting a computed pixel buffer every frame:
+
+```mfl
+extern "raylib" {
+    cstruct Image { data ptr  width i32  height i32  mipmaps i32  format i32 }
+    cstruct Texture2D { id i32  w i32  h i32  mipmaps i32  fmt i32 }
+    fn LoadTextureFromImage(Image) -> Texture2D
+    fn UpdateTexture(Texture2D, ptr)
+    fn LoadImageColors... // not needed — Image wraps raw pixels directly
+}
+
+g_fb = alloc(W * H * 4)                       // RGBA8, once
+// per pixel: poke_i32(g_fb, (y*W+x)*4, r + g*256 + b*65536 + 0xFF000000)
+img := Image{g_fb, W, H, 1, 7}                // format 7 = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8
+gl := LoadTextureFromImage(img)               // uploads ONCE
+SetTextureFilter(gl, 0)                       // point filter for crisp pixels
+// per frame after rasterizing:
+UpdateTexture(gl, g_fb)                       // REQUIRED — the texture does not track the buffer
+DrawTexturePro(gl, srcRect, dstRect, ...)
+```
+
+Gotchas: `LoadTextureFromImage` snapshots pixels at load — without
+`UpdateTexture` per frame you display the initial (usually black) frame.
+`TakeScreenshot` must run **after `EndDrawing`** — raylib batches draw calls
+and flushes at end-of-frame, so capturing earlier yields a stale buffer.
