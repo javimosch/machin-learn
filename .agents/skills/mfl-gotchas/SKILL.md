@@ -640,15 +640,37 @@ iterations, `-O2 -fno-strict-aliasing`): parallel `[]float` arrays vs a
 `[]Vert` cstruct slice with `.x/.y/.z` field access through the index —
 **within noise of each other** (~20-22ms both ways, identical accumulators).
 GCC emits equivalent loads either way; field access through `vs[j].x`
-compiles fine (the selfhost parser gap on `s[i].field` is #678, the Go
-compiler handles it). So the parallel-array pattern (`g_px/g_py/g_pz/...`)
-isn't a perf liability — a `[]Vert` refactor is a cleanliness choice, not
-a speed one. Don't refactor hot data for perf reasons alone.
+compiles fine in both compilers. So the parallel-array pattern
+(`g_px/g_py/g_pz/...`) isn't a perf liability — a `[]Vert` refactor is a
+cleanliness choice, not a speed one. Don't refactor hot data for perf
+reasons alone.
 
-## Selfhost compiler gaps found via demo dogfooding (issue #678)
+## Selfhost compiler: #678 FIXED (was: make-slice + friends parse gaps)
 
-`selfhost/mfl-cgen` (the MFL-compiled compiler) fails `(parse-error)` on
-`make([]T, n)` — `parse_make()` only handles `chan`/`map`, no slice branch,
-no `K_MAKESLICE` node kind. `make(map[K]V)` and `[]T{...}` literals work.
-Any program using make-slices is uncompilable by the self-hosted compiler;
-the verify-cgen corpus lacks make-slice coverage. Filed upstream.
+`selfhost/mfl-cgen` previously failed `(parse-error)` on `make([]T, n)`
+and `(check-error)` on the nanite demo. Fixed on branch
+`selfhost-makeslice-678` (machin repo): `parse_make` gained a `[` branch
+emitting `K_MAKESLICE` (s = "[]T", a = len, b = cap|-1), threaded through
+checkgen (`type_slot` → slice slot, len/cap paired to int), the capture
+scan, alias analysis, and cgen (`mfl_make_slice(len, cap, sizeof(ect))`).
+
+The same dogfood pass closed three more selfhost gaps:
+- **`<-` ambiguity** (parser.go issue #208): `x < -1` tightens to `x<-1`
+in canonical .mfl; the lexer emits one `<-` token. Selfhost now ports
+`parse_binary_from`'s reinterpret-as-`<`-plus-unary-`-` rule AND
+`parse_expr_for_stmt` (send statements / select send cases keep the `<-`).
+Without the for-stmt variant, `ch <- v` gets eaten as `ch < -v` — a real
+regression caught by verify-cgen's chan cases.
+- **Float exponents**: `1e-30` lexed as `1` + ident. `_` digit separators
+stay deferred on purpose — `parse_int`/`parse_float` don't strip them,
+so lexing `1_000` would silently produce 1 (a loud parse-error is better).
+- **sort/sort_by builtins**: were entirely absent from `gen_builtin`.
+Ported checker cases + `mfl_sort_copy` emission + per-elem-type
+`mfl_ltby_N` closure bridges (spliced before globals, matching the
+reference's sortFns position).
+
+Verified end-to-end: `mfl-cgen --full nanite.mfl` → gcc → working demo
+binary. Gates green: verify-cgen 415/0 (+4 new regression cases h14-h17),
+verify-parse, verify-fixpoint (byte-identical self-compile), verify-check
+{,2,3}, verify-closures. Known remaining selfhost divergence: funclit C
+names (`mfl_$lambda_N` vs Go's `mfl_lambda_N`) — pre-existing, cosmetic.
