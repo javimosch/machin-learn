@@ -17,6 +17,11 @@ content := read_file("data.txt")       // "" on error (file not found or empty)
 bytes := read_file_bytes("data.bin")   // NUL-safe binary read
 ```
 
+**`/proc` and `/sys` pseudo-files work** (machin ≥ the #668 fix): they report
+`st_size == 0` but yield bytes on read, and `read_file`/`read_file_bytes` now
+read to EOF rather than trusting the size — `read_file("/proc/self/status")`
+returns ~1.5 KB, not `""`.
+
 **⚠️ CRITICAL: `read_file` on a DIRECTORY segfaults**
 
 ```mfl
@@ -94,6 +99,17 @@ sqlite_exec(db, "INSERT INTO users (name, age) VALUES (?, ?)", []string{"Bob", "
 // Returns a JSON string: [{"id":1,"name":"Alice","age":30},{"id":2,"name":"Bob","age":25}]
 rows_json := sqlite_query(db, "SELECT * FROM users WHERE age > ?", []string{"20"})
 ```
+
+**`sqlite_query` failure vs empty (machin ≥ the #672 fix):** returns `""` on
+SQL failure — `"[]"` is reserved for a valid query with zero rows. Check
+`rows == ""` before `parse()` and call `sqlite_errmsg(db)` for the reason
+(e.g. `near "isnull": syntax error`). Before the fix, broken SQL silently
+returned `"[]"` and looked like an empty table.
+
+**`sqlite_exec` returns the sqlite3 result code** (0 ok; nonzero = e.g. 5 BUSY,
+19 CONSTRAINT). Handles open with a 5s `busy_timeout` (machin ≥ the #646 fix),
+so a writer losing a lock race waits instead of silently dropping the write —
+but a genuine failure still returns nonzero, so check it on write paths.
 
 ### Decoding query results
 

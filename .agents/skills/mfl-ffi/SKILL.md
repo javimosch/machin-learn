@@ -108,6 +108,12 @@ cam := Camera3D{
 BeginMode3D(cam)
 ```
 
+**User structs can hold cstructs** (`type Theme struct { bg Color }`) — the
+compiler emits the cstruct's `mfl_` typedef before its users automatically
+(#650 fix). Caveat: a **headerless** extern block (no `header "..."`) emits raw
+C typedefs itself, and a cstruct field whose type is another cstruct currently
+emits `void` there — use a real header for nested cstructs.
+
 ## 5. Opaque handles (Phase 3)
 
 For C structs that contain pointers (raylib's `Sound`, `Music`, `Font`, `Texture2D`), declare an empty `cstruct`:
