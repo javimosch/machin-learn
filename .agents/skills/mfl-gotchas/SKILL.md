@@ -633,6 +633,18 @@ Every complex function (rasterizer, DAG builder) reports "inconclusive —
 not certifiable" — the equivalence oracle can't handle them. Useful for
 leaf helpers; don't expect it to touch hot loops.
 
+## AoS vs SoA is codegen-neutral — `[]Vert` won't beat parallel arrays
+
+Micro-benchmark on the nanite demo's vertex data (100k elements, 60×100k
+iterations, `-O2 -fno-strict-aliasing`): parallel `[]float` arrays vs a
+`[]Vert` cstruct slice with `.x/.y/.z` field access through the index —
+**within noise of each other** (~20-22ms both ways, identical accumulators).
+GCC emits equivalent loads either way; field access through `vs[j].x`
+compiles fine (the selfhost parser gap on `s[i].field` is #678, the Go
+compiler handles it). So the parallel-array pattern (`g_px/g_py/g_pz/...`)
+isn't a perf liability — a `[]Vert` refactor is a cleanliness choice, not
+a speed one. Don't refactor hot data for perf reasons alone.
+
 ## Selfhost compiler gaps found via demo dogfooding (issue #678)
 
 `selfhost/mfl-cgen` (the MFL-compiled compiler) fails `(parse-error)` on
