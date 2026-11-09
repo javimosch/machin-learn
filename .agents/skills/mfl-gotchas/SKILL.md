@@ -593,3 +593,50 @@ type mismatch in "nt_simplify_group": num vs string — from c + k — at build.
 fields. If you still see a bare mismatch, it's from a global initializer
 (`var x = ...` runs outside any function) — the `— from` clause still
 points at the expression.
+
+## `poke_*`/`peek_*` stores are aliasing barriers — snapshot hot globals into locals
+
+Native builds compile with `-O2 -fno-strict-aliasing -fwrapv` (required for
+the raw-memory builtins' type-punning). Consequence: a `poke_i32`/`poke_u8`
+store inside a hot loop may alias *anything*, so the C compiler must reload
+every global — slice headers' `.data` pointers, camera/basis scalars — after
+each store. In a per-pixel rasterizer loop that meant ~25 global loads per
+pixel instead of register-resident values.
+
+Fix at the MFL level: copy read-only globals to **locals** at function top.
+A local's address never escapes, so points-to analysis still proves the
+`poke_*` store can't touch it even without strict aliasing:
+
+```mfl
+func nt_raster_tri(i0,i1,i2) {
+    l_zb := g_zbuf      // slice header copy — same data, stack-local header
+    l_fb := g_fb
+    l_cx := cam_x       // scalar snapshots
+    ...
+    // pixel loop uses l_zb[idx], l_cx, ... — globals untouched inside
+}
+```
+
+Measured on the nanite demo (448x252 software rasterizer): ~8ms → ~7ms main
+pass (~12%), fps 58 → 60 cap. Write-mostly counters can stay global. The same
+applies to any `peek_*` in a read loop.
+
+Related: `machin build` hardcodes `-O2` — there is **no CFLAGS/opt-level
+override** (only `CC`). `-O3 -march=native` measured ~10-20% faster on the
+same generated C. Gap worth an upstream knob (`MACHIN_CFLAGS` or `--opt`).
+
+## `machin optimize` works but only on small functions
+
+`machin optimize <file.mfl>` proposes + oracle-proves rewrites. On the
+nanite demo it proved exactly one: `nt_pack` mul→shift (cost 13→7, -46%).
+Every complex function (rasterizer, DAG builder) reports "inconclusive —
+not certifiable" — the equivalence oracle can't handle them. Useful for
+leaf helpers; don't expect it to touch hot loops.
+
+## Selfhost compiler gaps found via demo dogfooding (issue #678)
+
+`selfhost/mfl-cgen` (the MFL-compiled compiler) fails `(parse-error)` on
+`make([]T, n)` — `parse_make()` only handles `chan`/`map`, no slice branch,
+no `K_MAKESLICE` node kind. `make(map[K]V)` and `[]T{...}` literals work.
+Any program using make-slices is uncompilable by the self-hosted compiler;
+the verify-cgen corpus lacks make-slice coverage. Filed upstream.
