@@ -695,3 +695,21 @@ binary. Gates green: verify-cgen 415/0 (+4 new regression cases h14-h17),
 verify-parse, verify-fixpoint (byte-identical self-compile), verify-check
 {,2,3}, verify-closures. Known remaining selfhost divergence: funclit C
 names (`mfl_$lambda_N` vs Go's `mfl_lambda_N`) — pre-existing, cosmetic.
+
+## `--target windows` deps must be UCRT, not msvcrt (zig is UCRT-only)
+
+`zig cc -target x86_64-windows-gnu` links against **UCRT** (its bundled
+mingw-w64 ships `ucrt_*.obj`). Any prebuilt mingw library you point
+`MACHIN_WIN_OPENSSL`/`MACHIN_WIN_SODIUM` at MUST be built for UCRT —
+msys2's **ucrt64** environment (`mingw-w64-ucrt-x86_64-*` packages), NOT
+the default `mingw64` environment (`mingw-w64-x86_64-*`).
+
+The failure mode is nasty: msvcrt-built `.a` files compile fine but fail
+at link with `undefined symbol: __declspec(dllimport) _vsnprintf` — the
+objects carry dllimport attributes for msvcrt.dll that zig's UCRT libc
+can't satisfy. Verified 2026-11: ucrt64 OpenSSL 3.6.5 + libsodium 1.0.22
+static archives link clean and the resulting .exe runs correctly on real
+Windows. Gotcha within the gotcha: msys2 packages ship BOTH
+`libfoo.dll.a` (import lib) and `libfoo.a` (static) — for a self-contained
+.exe keep only the static `.a` in the `lib/` dir you point at, or the
+binary gains DLL dependencies that won't exist on the target machine.
