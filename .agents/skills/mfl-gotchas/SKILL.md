@@ -108,25 +108,26 @@ You cannot define a function named `contains`, `len`, `str`, `flush`, `keys`, `p
 func contains(xs, x) (b) { ... }  // COMPILE ERROR
 ```
 
-### 7b. Package-global initializers: no calls (selfhost), globals OK since #690
+### 7b. Package-global initializers: globals + calls OK since #690
 
 Global `var` initializers compile in a synthetic `$globals` context:
 
 ```mfl
 var n = 3
-var m = n + 1                 // OK — references earlier globals (fixed in #690)
+var m = n + 1                 // OK — references earlier globals
 var xs = make([]int, n, m*2)  // OK — non-constant make sizes work
-var d = dbl(n)                // SEGFAULTS the selfhost compiler — avoid calls here
+var d = dbl(n)                // OK — calls + builtins work too (fixed in #690)
+var b = str(n) + "!"
 ```
 
-- Pre-#690 the Go compiler also panicked (`isBoxed` nil-deref) on ANY ident
-  inside a global init — `var g = N` alone crashed. Fixed; keep literals or
-  init in `main()` if targeting compilers older than the fix.
-- The **selfhost** compiler still segfaults on `var d = f(x)` (call in a
-  global init) — `cg_expr(-1, …)` hits an unguarded instance lookup. Compute
-  call results inside `main()` or another function and assign the global
-  there (`g = dbl(n)` inside main is fine — only the *initializer* is
-  restricted).
+- Pre-#690 the Go compiler panicked (`isBoxed` nil-deref) on ANY ident inside
+  a global init, and the selfhost compiler segfaulted on calls there
+  (`g_insts[-1]` lookup — it never saved the globals' call-instance records).
+  Both fixed in #690; on compilers older than the fix, keep init expressions
+  literal or assign inside `main()` instead.
+- Still unsupported in global inits (rejected cleanly, not a crash): funclit
+  literals (`var f = func...` — encode/typecheck rejects it) and anything
+  needing statement context (multi-assign, loops). Compute those in `main()`.
 
 ## ⚠️ Common mistakes
 
