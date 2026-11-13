@@ -316,6 +316,44 @@ Other contracts that differ from a normal `DrawMesh` call:
 Same-frame numbers from the defil renderer (llvmpipe): 27524 `DrawMesh` calls →
 1078 instanced draws, 53 ms → 16 ms.
 
+## 11b. C arrays of by-value structs: `ptr` return + `*T` deref + byte offsets
+
+When a C API returns `StructName *` (an array) and its consumers take `StructName`
+**by value** — raylib's `LoadModelAnimations`/`UpdateModelAnimation` is the
+canonical case — the whole dance is raw-memory indexing, no new FFI feature:
+
+```mfl
+cstruct ModelAnimation {}                      // opaque: never constructed, only *T-deref'd
+fn LoadModelAnimations(string, ptr) ptr        // ModelAnimation* -> ptr; int* out-param via alloc(4)
+cnt := alloc(8)
+anims := LoadModelAnimations("clips.glb", cnt) // cnt receives animCount
+n := peek_i32(cnt, 0)
+free(cnt)
+
+// element i lives at anims + i*sizeof(ModelAnimation) — pin the C lib version!
+// raylib 5.0 LP64: {i32,i32,ptr,ptr,char[32]} = 56 bytes
+MA_SIZE := 56                                  // func or literal; sizeof is layout-specific
+frames := peek_i32(anims + i * MA_SIZE, 4)     // read a field straight out of the C struct
+UpdateModelAnimation(model, anims + i * MA_SIZE, frame)  // *ModelAnimation param: MFL arg is the byte-address int, C derefs it
+```
+
+- `*T` params take **any int expression** as the address (`anims + i*56`), so
+  array indexing is just byte arithmetic — get `sizeof` right or you read/write
+  the wrong struct.
+- Reading struct fields (`frameCount`, out-params like `int *animCount`) is
+  `peek_*` on the raw address; writing out-params is `alloc` + pass `ptr`.
+- Proven end-to-end in **painted-valley-machin** (`src/figure.src`): 33 glTF
+  clips loaded from a skin-patched GLB and played on a skinned `Model`.
+
+**raylib gotcha that forced an asset patch:** `LoadModelAnimations(file)`
+requires the *animation file itself* to contain **exactly one skin** — it builds
+its bone table from `skin.joints`. A clips-only GLB (no meshes/skins, which is
+what three.js-style pipelines produce) fails with "expected exactly one skin".
+Fix: inject `skins:[{joints:[...]}]` into the GLB JSON, joints = the model's
+joint nodes **in the model's skin-joint order by name** (raylib also wants
+parents before children or it warns per-frame and skips bones). See
+`painted-valley-machin/tools/patch-clips-glb.py`.
+
 ## 12. Real-world FFI apps in the ecosystem
 
 | App | What it demonstrates | Link |
