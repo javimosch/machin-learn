@@ -39,6 +39,22 @@ func main() {
 }
 ```
 
+## 2b. OpenSSL EVP via FFI — you MUST declare the header
+
+The crypto builtins (`aes_gcm_*`, `sha256_bytes`, …) compile OpenSSL headers into every binary that uses them. If your `extern` block calls EVP/other OpenSSL functions **without** a `header`, machin emits its own `extern int32_t fn(void*,...)` prototypes that **conflict** with the real prototypes already pulled in by the prelude → `error: conflicting types`. Always write:
+
+```mfl
+extern "crypto" {
+    header "openssl/evp.h"     // lets machin skip emitting prototypes
+    link "crypto"
+    fn EVP_CIPHER_CTX_new() ptr
+    fn EVP_DecryptUpdate(ptr, ptr, ptr, ptr, i32) i32   // int* outl -> pass alloc(4), read with peek_i32
+    ...
+}
+```
+
+`ptr` params map to `void*` and C converts them to the real pointer types (`EVP_CIPHER_CTX*`, `unsigned char*`, …). Proof-of-concept AES-CTR decrypt loop: [machin-suno/src/crypto.src](https://github.com/javimosch/machin-suno/blob/master/src/crypto.src) — verified against the NIST AES-128-CTR vector.
+
 ## 3. FFI type mapping
 
 | MFL | C |

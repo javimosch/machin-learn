@@ -219,6 +219,25 @@ body := http_get("https://example.com")
 status, body, err := http_get("https://example.com")
 ```
 
+**⚠️ Bodies are NUL-terminated strings — binary content truncates at the first `\x00`.** `https_get`/`http_get`/`http_request`/`https_post` all return `string`, so ciphertext, images, archives, etc. come back corrupted. For a binary-safe HTTPS GET, drive TLS yourself (proved in [machin-suno](https://github.com/javimosch/machin-suno)):
+
+```mfl
+host, port, path := url_split(url)          // your own ~15-line parser
+fd := dial(host, port)
+socket_timeout(fd, 30000)                    // http_request has NO timeout — see gotchas
+tls := tls_client_fd(fd, host)               // verified TLS (SNI + hostname)
+tls_write_bytes(tls, bytes(req))             // ASCII request is fine as bytes()
+all := bytes("")
+while true {
+    c := tls_read_bytes(tls)                 // up to 64 KB, NUL-safe
+    if len(c) == 0 { break }                 // Connection: close -> EOF ends it
+    all = bytes_concat(all, c)
+}
+tls_close(tls)                               // shuts down TLS AND closes fd
+// then bytes_index(all, bytes("\r\n\r\n"), 0) for the header/body split,
+// handle content-length vs transfer-encoding: chunked yourself.
+```
+
 ## 9. WebSocket client
 
 ```mfl

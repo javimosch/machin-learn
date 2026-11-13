@@ -240,6 +240,10 @@ b64 := base64_encode_bytes(data)
 decoded := base64_decode_bytes(b64)
 ```
 
+**⚠️ `mmap_file` mappings are NOT malloc'd — never `free()` the pointer.** `p, n := mmap_file(path)` maps `PROT_READ, MAP_PRIVATE`; the mapping lives until process exit. Calling `free(p)` aborts with `free(): invalid pointer` (SIGABRT, no MFL error). Same for the Windows `MapViewOfFile` path. To release early there is no unmap builtin — just let it leak for the process lifetime (fine for one-shot CLIs).
+
+Also note `read_file_raw`/`write_file_raw` are the bridge between `bytes` and raw pointers: `bytes -> file -> mmap` or `alloc + poke_u8 loop` gets data into a `ptr` for FFI.
+
 ## 6. Reference apps
 
 | App | Storage technique | Link |
