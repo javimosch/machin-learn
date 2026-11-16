@@ -392,3 +392,30 @@ Gotchas: `LoadTextureFromImage` snapshots pixels at load — without
 `UpdateTexture` per frame you display the initial (usually black) frame.
 `TakeScreenshot` must run **after `EndDrawing`** — raylib batches draw calls
 and flushes at end-of-frame, so capturing earlier yields a stale buffer.
+
+## 14. Earth-scale raylib scenes: separate world, render and material frames
+
+Dogfooded in pixel-town-world (Earth radius 6,371,000m, metre-scale buildings):
+
+- MFL `float` is double precision, but raylib `Vector3`/GPU vertex positions
+  are `f32`. Subtract a shared focus origin in MFL BEFORE crossing the FFI;
+  also store mesh vertices relative to nearby anchors. Subtracting absolute
+  Earth-radius positions in GLSL is already too late to preserve centimetres.
+- Camera, draw transforms, projected labels and fog must use the SAME scaled,
+  focus-relative frame. Keep procedural material coordinates in an independent
+  stable tangent frame so textures do not rotate on southern latitudes or swim
+  when chunk origins move. Engine APIs take basis vectors/offsets, not city data.
+- raylib's default perspective clip range is not suitable for a planet atlas.
+  Set the custom projection AFTER `BeginMode3D`, which otherwise replaces it.
+  A street camera needs a different depth range (e.g. near=0.08m/far=6000m),
+  with the SAME FOV in Camera3D and the projection, not planet-wide planes.
+- Use `SetExitKey(0)` when Esc should leave a mode rather than close the window.
+  Pair `DisableCursor` with `EnableCursor` on mode exit, focus loss and shutdown;
+  pause while unfocused and discard the first mouse delta after capture/resume.
+- Deterministic capture flags must ignore live input and avoid cursor capture.
+  Capture all destinations plus the return path; one attractive dry city can
+  hide invalid spawn assumptions in wet regions. Headless movement tests and
+  framebuffer screenshots verify different things; keep both.
+
+See pixel-town-world/docs/world-atlas-approach.md and its --verify/--street-tour
+entry points for the maintained implementation, not a separate surface-world swap.

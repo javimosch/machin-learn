@@ -713,3 +713,21 @@ Windows. Gotcha within the gotcha: msys2 packages ship BOTH
 `libfoo.dll.a` (import lib) and `libfoo.a` (static) — for a self-contained
 .exe keep only the static `.a` in the `lib/` dir you point at, or the
 binary gains DLL dependencies that won't exist on the target machine.
+
+## Boolean verification helpers must propagate failure
+
+A helper that returns `false` without printing can produce a silent, successful
+process exit if its caller ignores the result. This happened in pixel-town-world:
+a collision-test search assumed every city had a dry building near the center;
+a wet city violated that fixture assumption and the helper returned early.
+
+```mfl
+if verify_scene() == false { println("FAIL: scene verification"); exit(1) }
+println("PASS: scene verification")
+```
+
+Do not infer a compiler dead-call bug from absent output. The earlier claim that
+`unused := effect()` drops side effects was disproved on machin 0.142.0 using
+both direct `run` and `encode | run`: an effect that prints and increments a
+global executes even when its return binding is unused. Check early returns,
+fixture coverage, stdout and exit status before filing an optimizer issue.
