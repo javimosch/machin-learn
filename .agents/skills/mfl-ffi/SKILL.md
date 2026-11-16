@@ -430,3 +430,14 @@ recover cyan if the palette only offers cream. Flat window trim/panes need
 quads, not five-sided boxes; check mesh capacity as procedural detail grows.
 An apparent FALS002 false positive in the same spike was actually a smoothstep
 helper lacking a zero-width-range guard. Guarding it removed the warning.
+
+For native Windows raylib builds, emit Windows-target C, not native Linux C.
+The runtime/winpthreads can pull in Win32 headers before the FFI header;
+`Rectangle`, `CloseWindow` and `ShowCursor` then collide with raylib names.
+`-DNOGDI -DNOUSER` fixes this app when it does not itself use those Win32 APIs;
+other consumers needing them should isolate/rename the conflicting declarations.
+Explicit Zig linking lets the app supply its third-party include/library flags.
+A successful SSH headless run does not verify the interactive OpenGL session:
+pixel-town-world also ran its bounded, cursor-free demo in the logged-in
+Windows console via a temporary interactive-token task (principal = current
+identity SID). Verify its exit status and screenshots; remove your test task.
