@@ -419,3 +419,14 @@ Dogfooded in pixel-town-world (Earth radius 6,371,000m, metre-scale buildings):
 
 See pixel-town-world/docs/world-atlas-approach.md and its --verify/--street-tour
 entry points for the maintained implementation, not a separate surface-world swap.
+
+For procedural billboard crowds sharing a grass shader, use raylib's default
+`vertexTexCoord` attribute name or explicitly bind a custom one. Sprite UV.x
+must not also drive grass bending; disable wind for the sprite material, and
+discard transparent atlas texels before depth write. Keep dynamic mesh buffers
+separate from the static mesh builder's scratch, with one resource owner.
+Palette quantization is part of an era profile: increasing emission cannot
+recover cyan if the palette only offers cream. Flat window trim/panes need
+quads, not five-sided boxes; check mesh capacity as procedural detail grows.
+An apparent FALS002 false positive in the same spike was actually a smoothstep
+helper lacking a zero-width-range guard. Guarding it removed the warning.
