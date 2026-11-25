@@ -391,6 +391,22 @@ machin guide --text
 
 Prints every keyword, builtin with signature, idiom, and gotcha — version-exact, guaranteed to match the implementation.
 
+### Vendored C libraries: `CFLAGS`/`LDFLAGS` are ignored (found 0.142.1, machin#713)
+
+`machin build` does **not** read `CFLAGS`/`LDFLAGS`, and has no flag for include/lib paths. Measured with prebuilt raylib 5.0 in a non-system dir:
+
+| how paths are given | result |
+|---|---|
+| nothing / `CFLAGS=-I… LDFLAGS=-L…` | `fatal error: raylib.h: No such file or directory` |
+| `CPATH=<inc> LIBRARY_PATH=<lib>` (gcc's own vars) | builds, but links `libraylib.so` **dynamically** |
+| `sed` the encoded source: `header "raylib.h"` → `cflags "-I… -L…" header "raylib.h"`, `link "raylib"` → `link ":libraylib.a"` | builds **static** — the only way to choose static |
+
+Use the `sed` recipe (see any game `build.sh`) when the binary must be self-contained; `CPATH`/`LIBRARY_PATH` is fine for a quick local build.
+
+### `machin encode` of a library file fails without a `main` (found 0.142.1, machin#711)
+
+`machin encode lib.src` → `error: typecheck: no main function defined (and no exported functions)`. `encode` typechecks the whole program, so canonicalizing one module alone is impossible; concatenate every module (plus any framework file) and encode the lot.
+
 ## 💡 Performance tips
 
 ### 19. Memory: per-goroutine arena
@@ -479,7 +495,7 @@ A cluster of compile errors from building a machweb + WebSocket server — all a
 | `int_str(42)` / `float_str(3.14)` | `str(42)` / `str(3.14)` | `str(int\|float\|bool\|string)` is the only formatter |
 | `index_of(s, "n")` | `contains(s,"n")` + `split(s,"n")` | no `index_of`/`strpos` — use `contains`+`split` |
 | `sleep_ms(5000)` | `sleep(5000)` | the pause builtin is `sleep(int)` in ms |
-| `serve(p, handler)` | `serve(p, func(req){return handler(req)})` | bare fn name isn't a first-class value — wrap in closure |
+| `serve(p, handler)` | `serve(p, func(req){return handler(req)})` | bare fn name isn't a first-class value — wrap in closure. The error is `typecheck: main$0: undefined variable "handler"` (it names a *function* as a missing variable); applies to any callback position (`sort_by` comparators too), not just `serve` — machin#710 |
 | `not_found("msg")` | `not_found()` | takes 0 args (hardcoded "not found"); build `response(...)` for custom body |
 | `if ok == 0` (chan recv) | `if !ok` | comma-ok of `<-ch` / `m[k]` returns `(value, bool)` |
 
