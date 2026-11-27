@@ -414,6 +414,17 @@ Use the `sed` recipe (see any game `build.sh`) when the binary must be self-cont
 - Each goroutine gets its own arena — memory is freed on return
 - Wrap hot allocation loops in `arena { ... }` to keep peak memory flat
 - Scalars (int, float, bool) are not heap-allocated
+- **Channels are the exception: nothing frees them automatically** (~160 bytes
+  each, machin#740), not `close`, `arena { }` or goroutine return. In long-running
+  loops, call `chan_free(ch)` (0.145.0+; self-hosted compiler from 0.146.2). It
+  also discards queued messages. Nothing else may still use the channel (freeing
+  after you received its final send is fine).
+- From 0.146.2 `chan_free` panics on some misuse, but don't rely on it: a double
+  free is missed if a new channel reused the address (the new one gets freed,
+  and you may then see a bogus deadlock report), a goroutine waiting in `select`
+  is not detected, and any later use is a use-after-free, even with `--safe`
+- Before 0.145.0, finished goroutines also leaked a little memory each
+  (fixed, machin#726)
 
 ### 20. Channel sends deep-copy values
 

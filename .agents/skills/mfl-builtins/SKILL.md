@@ -285,6 +285,8 @@ rand_bytes(n) -> bytes  // cryptographically random bytes
 byte_at(b, i) -> int    // byte at index in bytes value
 alloc(n) -> int         // allocate n zeroed bytes (returns pointer)
 free(p)                 // free allocated memory
+chan_free(ch)           // free a channel + queued messages (unchecked; mfl-gotchas 19)
+map_free(m)             // free a main-goroutine map; don't use it afterwards
 ptr_str(p) -> string    // read NUL-terminated string from pointer
 ```
 

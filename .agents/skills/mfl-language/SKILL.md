@@ -264,7 +264,11 @@ ch <- 42          // send
 v := <-ch         // receive
 v, ok := <-ch     // comma-ok receive (ok=false after close)
 close(ch)         // close
+chan_free(ch)     // free its memory (0.145.0+); unchecked, see below
 ```
+
+Channels are never freed automatically: not by `close`, an arena, or a goroutine
+returning. See gotcha 19 in `mfl-gotchas`.
 
 ### Select
 
